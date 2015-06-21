@@ -18,7 +18,7 @@ before_install:
  # `apt`. If it isn't, install the GHC we want from hvr's PPA along
  # with cabal-1.18.
  - |
-   if [ $GHCVER = `ghc --numeric-version` ]; then
+   if [ $GHCVER -eq `ghc --numeric-version` ]; then
      travis/cabal-apt-install --enable-tests $MODE
      export CABAL=cabal
    else

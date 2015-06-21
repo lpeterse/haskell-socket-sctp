@@ -14,6 +14,8 @@ module System.Socket.Protocol.SCTP.Internal
   , AssociationIdentifier (..)
   ) where
 
+import Control.Applicative
+
 import Data.Bits
 import Data.Word
 
