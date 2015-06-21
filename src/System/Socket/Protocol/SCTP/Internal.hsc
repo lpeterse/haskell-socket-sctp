@@ -89,8 +89,8 @@ addressOverride  = SendReceiveInfoFlags (#const SCTP_ADDR_OVER)
 abort           :: SendReceiveInfoFlags
 abort            = SendReceiveInfoFlags (#const SCTP_ABORT)
 
-endOfFile       :: SendReceiveInfoFlags
-endOfFile        = SendReceiveInfoFlags (#const SCTP_EOF)
+shutdown        :: SendReceiveInfoFlags
+shutdown         = SendReceiveInfoFlags (#const SCTP_EOF)
 
 
 instance Storable SendReceiveInfo where
