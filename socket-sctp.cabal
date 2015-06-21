@@ -16,14 +16,15 @@ tested-with:         GHC==7.10.1, GHC==7.8.3
 extra-source-files:  README.md
                      CHANGELOG.md
                      CONTRIBUTORS.txt
-                     platform/linux/src/System/Socket/Protocol/SCTP/Internal/Platform.hsc
+                     platform/linux/src/System/Socket/Protocol/SCTP/Platform.hsc
                      platform/linux/include/hs_sctp.h
                      platform/linux/cbits/hs_sctp.c
 
 library
   ghc-options:         -Wall
   exposed-modules:     System.Socket.Protocol.SCTP
-  other-modules:       System.Socket.Protocol.SCTP.Internal.Platform
+  other-modules:       System.Socket.Protocol.SCTP.Platform
+                     , System.Socket.Protocol.SCTP.Internal
   build-depends:       base >= 4.7 && < 5
                      , bytestring < 0.11
                      , socket >= 0.5.0.0 && < 0.6.0.0
