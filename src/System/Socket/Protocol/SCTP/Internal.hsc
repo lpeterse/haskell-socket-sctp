@@ -1,27 +1,50 @@
-{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
 module System.Socket.Protocol.SCTP.Internal
   ( SCTP
+  -- * Operations
+  -- ** receiveMessage
+  , receiveMessage
+  -- ** sendMessage
+  , sendMessage
   -- * SendReceiveInfo
   , SendReceiveInfo (..)
   , StreamNumber (..)
   , StreamSequenceNumber (..)
-  , SendReceiveInfoFlags (..)
   , PayloadProtocolIdentifier (..)
   , Context (..)
   , TimeToLive (..)
   , TransportSequenceNumber (..)
   , CumulatedTransportSequenceNumber (..)
   , AssociationIdentifier (..)
+  -- * SendReceiveInfoFlags
+  , SendReceiveInfoFlags (..)
+  -- ** unordered
+  , unordered
+  -- ** addressOverride
+  , addressOverride
+  -- ** abort
+  , abort
+  -- ** shutdown
+  , shutdown
   ) where
 
 import Control.Applicative
+import Control.Exception
 
 import Data.Bits
 import Data.Word
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Unsafe as BS
 
 import Foreign.Storable
 import Foreign.Ptr
+import Foreign.Marshal
+import Foreign.C.Types
 
+import System.Posix.Types ( Fd(..) )
+
+import System.Socket
+import System.Socket.Unsafe
 import System.Socket.Protocol
 
 #include "netinet/sctp.h"
@@ -119,3 +142,57 @@ instance Storable SendReceiveInfo where
     poke ((#ptr struct sctp_sndrcvinfo, sinfo_cumtsn)     ptr) (sinfoCumulatedTransportSequenceNumber a)
     poke ((#ptr struct sctp_sndrcvinfo, sinfo_assoc_id)   ptr) (sinfoAssociationIdentifier a)
 
+-------------------------------------------------------------------------------
+-- Operations
+-------------------------------------------------------------------------------
+
+receiveMessage :: Family f => Socket f t SCTP -> Int -> MessageFlags -> IO (BS.ByteString, SocketAddress f, SendReceiveInfo, MessageFlags)
+receiveMessage = f
+  where
+    f :: forall f t p. (Family f) => Socket f t p -> Int -> MessageFlags -> IO (BS.ByteString, SocketAddress f, SendReceiveInfo, MessageFlags)
+    f sock bufSize flags = do
+      alloca $ \addrPtr-> do
+        alloca $ \addrSizePtr-> do
+          alloca $ \sinfoPtr-> do
+            alloca $ \flagsPtr -> do
+              c_memset sinfoPtr 0 (#size struct sctp_sndrcvinfo)
+              poke addrSizePtr (fromIntegral $ sizeOf (undefined :: SocketAddress f))
+              poke flagsPtr (flags `mappend` msgNoSignal)
+              bracketOnError
+                ( mallocBytes bufSize )
+                (\bufPtr-> free bufPtr )
+                (\bufPtr-> do
+                    bytesReceived <- tryWaitAndRetry
+                      sock
+                      socketWaitWrite
+                      (\fd-> c_sctp_recvmsg fd bufPtr (fromIntegral bufSize) addrPtr addrSizePtr sinfoPtr flagsPtr )
+                    addr   <- peek addrPtr
+                    flags' <- peek flagsPtr
+                    sinfo  <- peek sinfoPtr
+                    msg    <- BS.unsafePackMallocCStringLen (bufPtr, fromIntegral bytesReceived)
+                    return (msg, addr, sinfo, flags')
+                )
+
+sendMessage :: Family f => Socket f t SCTP
+                        -> BS.ByteString
+                        -> SocketAddress f
+                        -> PayloadProtocolIdentifier
+                        -> MessageFlags
+                        -> StreamNumber
+                        -> TimeToLive
+                        -> IO Int
+sendMessage = do
+  undefined
+
+------------------------------------------------------------------------
+-- FFI
+------------------------------------------------------------------------
+
+foreign import ccall unsafe "memset"
+  c_memset   :: Ptr a -> CInt -> CSize -> IO ()
+
+foreign import ccall unsafe "sctp_recvmsg"
+  c_sctp_recvmsg :: Fd -> Ptr a -> CSize -> Ptr b -> Ptr CInt -> Ptr SendReceiveInfo -> Ptr MessageFlags -> IO CInt
+
+foreign import ccall unsafe "sctp_sendmsg"
+  c_sctp_sendmsg :: Fd -> Ptr a -> CSize -> PayloadProtocolIdentifier -> MessageFlags -> StreamNumber -> TimeToLive -> Context -> IO CInt
