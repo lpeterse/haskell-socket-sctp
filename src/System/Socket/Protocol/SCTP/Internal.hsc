@@ -254,12 +254,12 @@ data Events
      , partialDeliveryEvent  :: Bool
      , adaptationLayerEvent  :: Bool
      , authenticationEvent   :: Bool
-     , senderDryEvent        :: Bool
+--     , senderDryEvent        :: Bool
      }
    deriving (Eq, Ord, Show)
 
 instance Monoid Events where
-  mempty = let x = False in Events x x x x x x x x x x
+  mempty = let x = False in Events x x x x x x x x x -- x
   mappend a b = Events
     (max (dataIOEvent          a) (dataIOEvent          b))
     (max (associationEvent     a) (associationEvent     b))
@@ -270,7 +270,7 @@ instance Monoid Events where
     (max (partialDeliveryEvent a) (partialDeliveryEvent b))
     (max (adaptationLayerEvent a) (adaptationLayerEvent b))
     (max (authenticationEvent  a) (authenticationEvent  b))
-    (max (senderDryEvent       a) (senderDryEvent       b))
+--    (max (senderDryEvent       a) (senderDryEvent       b))
 
 instance Storable Events where
   sizeOf    _ = (#size struct sctp_event_subscribe)
@@ -285,7 +285,7 @@ instance Storable Events where
     <*> ((/=0) <$> (peek ((#ptr struct sctp_event_subscribe, sctp_partial_delivery_event)   ptr :: Ptr CUChar)))
     <*> ((/=0) <$> (peek ((#ptr struct sctp_event_subscribe, sctp_adaptation_layer_event)   ptr :: Ptr CUChar)))
     <*> ((/=0) <$> (peek ((#ptr struct sctp_event_subscribe, sctp_authentication_event)     ptr :: Ptr CUChar)))
-    <*> ((/=0) <$> (peek ((#ptr struct sctp_event_subscribe, sctp_sender_dry_event)         ptr :: Ptr CUChar)))
+--    <*> ((/=0) <$> (peek ((#ptr struct sctp_event_subscribe, sctp_sender_dry_event)         ptr :: Ptr CUChar)))
   poke ptr a = do
     c_memset ptr 0 $ fromIntegral (sizeOf a)
     poke ((#ptr struct sctp_event_subscribe, sctp_data_io_event)            ptr :: Ptr CUChar) (f $ dataIOEvent          a)
@@ -297,7 +297,7 @@ instance Storable Events where
     poke ((#ptr struct sctp_event_subscribe, sctp_partial_delivery_event)   ptr :: Ptr CUChar) (f $ partialDeliveryEvent a)
     poke ((#ptr struct sctp_event_subscribe, sctp_adaptation_layer_event)   ptr :: Ptr CUChar) (f $ adaptationLayerEvent a)
     poke ((#ptr struct sctp_event_subscribe, sctp_authentication_event)     ptr :: Ptr CUChar) (f $ authenticationEvent  a)
-    poke ((#ptr struct sctp_event_subscribe, sctp_sender_dry_event)         ptr :: Ptr CUChar) (f $ senderDryEvent       a)
+--    poke ((#ptr struct sctp_event_subscribe, sctp_sender_dry_event)         ptr :: Ptr CUChar) (f $ senderDryEvent       a)
     where
       f True  = 1
       f False = 0
