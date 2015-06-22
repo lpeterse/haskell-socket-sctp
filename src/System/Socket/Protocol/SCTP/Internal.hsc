@@ -27,6 +27,8 @@ module System.Socket.Protocol.SCTP.Internal
   -- ** shutdown
   , shutdown
   -- * Socket Options
+  -- ** InitMessage
+  , InitMessage (..)
   -- ** Events
   , Events (..)
   ) where
@@ -208,6 +210,38 @@ sendMessage sock msg addr ppid flags sn ttl context = do
                   context
       return (fromIntegral i)
 
+-- | @SCTP_INITMSG@
+data InitMessage
+   = InitMessage
+     { outboundStreams     :: Word16 -- ^ number of outbound streams
+     , maxInboundStreams   :: Word16 -- ^ max number of inbound streams
+     , maxAttempts         :: Word16 -- ^ max number re-transmissions while establishing an association
+     , maxInitTimeout      :: Word16 -- ^ time-out in milliseconds for establishing an association
+     } deriving (Eq, Ord, Show)
+
+instance Storable InitMessage where
+  sizeOf    _ = (#size struct sctp_initmsg)
+  alignment _ = (#alignment struct sctp_initmsg)
+  peek ptr    = InitMessage
+    <$> peek ( (#ptr struct sctp_initmsg, sinit_num_ostreams)   ptr)
+    <*> peek ( (#ptr struct sctp_initmsg, sinit_max_instreams)  ptr)
+    <*> peek ( (#ptr struct sctp_initmsg, sinit_max_attempts)   ptr)
+    <*> peek ( (#ptr struct sctp_initmsg, sinit_max_init_timeo) ptr)
+  poke ptr a  = do
+    c_memset ptr 0 $ fromIntegral (sizeOf a)
+    poke ((#ptr struct sctp_initmsg, sinit_num_ostreams)   ptr) (outboundStreams    a)
+    poke ((#ptr struct sctp_initmsg, sinit_max_instreams)  ptr) (maxInboundStreams  a)
+    poke ((#ptr struct sctp_initmsg, sinit_max_attempts)   ptr) (maxAttempts        a)
+    poke ((#ptr struct sctp_initmsg, sinit_max_init_timeo) ptr) (maxInitTimeout     a)
+
+instance GetSocketOption InitMessage where
+  getSocketOption sock =
+    unsafeGetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_INITMSG)
+
+instance SetSocketOption InitMessage where
+  setSocketOption sock value =
+    unsafeSetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_INITMSG) value
+
 -- | @SCTP_EVENTS@
 data Events
    = Events
@@ -267,6 +301,10 @@ instance Storable Events where
     where
       f True  = 1
       f False = 0
+
+instance GetSocketOption Events where
+  getSocketOption sock =
+    unsafeGetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_EVENTS)
 
 instance SetSocketOption Events where
   setSocketOption sock value =
