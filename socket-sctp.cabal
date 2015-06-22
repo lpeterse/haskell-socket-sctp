@@ -35,6 +35,7 @@ library
   include-dirs:        platform/linux/include
   hs-source-dirs:      platform/linux/src
   c-sources:           platform/linux/cbits/hs_sctp.c
+  extra-libraries:     sctp
 
 source-repository head
   type:                git
