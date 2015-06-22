@@ -65,5 +65,5 @@ import System.Socket.Protocol.SCTP.Internal
 -- >     ( 2342   :: PayloadProtocolIdentifier )
 -- >     ( mempty :: MessageFlags )
 -- >     ( 2      :: StreamNumber )
--- >     ( 3      :: TimeToLive )
--- >     ( 4      :: Context )
+-- >     ( 0      :: TimeToLive )
+-- >     ( 0      :: Context )

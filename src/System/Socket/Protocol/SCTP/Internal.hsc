@@ -170,9 +170,9 @@ receiveMessage = f
                 ( mallocBytes bufSize )
                 (\bufPtr-> free bufPtr )
                 (\bufPtr-> do
-                    bytesReceived <- tryWaitAndRetry
+                    bytesReceived <- tryWaitRetryLoop
                       sock
-                      socketWaitRead
+                      unsafeSocketWaitRead
                       (\fd-> c_sctp_recvmsg fd bufPtr (fromIntegral bufSize) addrPtr addrSizePtr sinfoPtr flagsPtr )
                     addr   <- peek addrPtr
                     flags' <- peek flagsPtr
@@ -194,9 +194,9 @@ sendMessage sock msg addr ppid flags sn ttl context = do
   alloca $ \addrPtr-> do
     BS.unsafeUseAsCStringLen msg $ \(msgPtr,msgSize)-> do
       poke addrPtr addr
-      i <- tryWaitAndRetry
+      i <- tryWaitRetryLoop
         sock
-        socketWaitWrite
+        unsafeSocketWaitWrite
         $ \fd-> c_sctp_sendmsg
                   fd
                   msgPtr
