@@ -32,3 +32,13 @@ library
 source-repository head
   type:                git
   location:            git://github.com/lpeterse/haskell-socket-sctp.git
+
+test-suite SendReceiveMessage
+  hs-source-dirs:      tests
+  main-is:             SendReceiveMessage.hs
+  type:                exitcode-stdio-1.0
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5
+                     , bytestring < 0.11
+                     , socket
+                     , socket-sctp
