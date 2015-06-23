@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving #-}
 module System.Socket.Protocol.SCTP.Internal
   ( SCTP
   -- * Operations
@@ -14,7 +14,7 @@ module System.Socket.Protocol.SCTP.Internal
   , Context (..)
   , TimeToLive (..)
   , TransportSequenceNumber (..)
-  , CumulatedTransportSequenceNumber (..)
+  , CumulativeTransportSequenceNumber (..)
   , AssociationIdentifier (..)
   -- * SendReceiveInfoFlags
   , SendReceiveInfoFlags (..)
@@ -67,7 +67,7 @@ data SendReceiveInfo
      , sinfoContext                           :: Context
      , sinfoTimeToLive                        :: TimeToLive
      , sinfoTransportSequenceNumber           :: TransportSequenceNumber
-     , sinfoCumulatedTransportSequenceNumber  :: CumulatedTransportSequenceNumber
+     , sinfoCumulativeTransportSequenceNumber  :: CumulativeTransportSequenceNumber
      , sinfoAssociationIdentifier             :: AssociationIdentifier
      }
      deriving (Eq, Show)
@@ -100,8 +100,8 @@ newtype TransportSequenceNumber
       = TransportSequenceNumber Word32
       deriving (Eq, Ord, Show, Num, Storable)
 
-newtype CumulatedTransportSequenceNumber
-      = CumulatedTransportSequenceNumber Word32
+newtype CumulativeTransportSequenceNumber
+      = CumulativeTransportSequenceNumber Word32
       deriving (Eq, Ord, Show, Num, Storable)
 
 newtype AssociationIdentifier
@@ -145,43 +145,53 @@ instance Storable SendReceiveInfo where
     poke ((#ptr struct sctp_sndrcvinfo, sinfo_context)    ptr) (sinfoContext a)
     poke ((#ptr struct sctp_sndrcvinfo, sinfo_timetolive) ptr) (sinfoTimeToLive a)
     poke ((#ptr struct sctp_sndrcvinfo, sinfo_tsn)        ptr) (sinfoTransportSequenceNumber a)
-    poke ((#ptr struct sctp_sndrcvinfo, sinfo_cumtsn)     ptr) (sinfoCumulatedTransportSequenceNumber a)
+    poke ((#ptr struct sctp_sndrcvinfo, sinfo_cumtsn)     ptr) (sinfoCumulativeTransportSequenceNumber a)
     poke ((#ptr struct sctp_sndrcvinfo, sinfo_assoc_id)   ptr) (sinfoAssociationIdentifier a)
 
 -------------------------------------------------------------------------------
 -- Operations
 -------------------------------------------------------------------------------
 
-receiveMessage :: Family f => Socket f SequentialPacket SCTP 
+-- | Receive a message on a SCTP socket.
+--
+-- - Everything that applies to `System.Socket.recv` is also true for this operation.
+-- - The fields of the `SendReceiveInfo` structure are only filled if `dataIOEvent`
+--   has been enabled trough the `Events` socket option.
+-- - If the supplied buffer size is not sufficient, several consecutive reads are
+--   necessary to receive the complete message. The `msgEndOfRecord` flag is set
+--   when the message has been read completely.
+receiveMessage :: Family f => Socket f SequentialPacket SCTP
                            -> Int -- ^ buffer size in bytes
-                           -> MessageFlags 
+                           -> MessageFlags
                            -> IO (BS.ByteString, SocketAddress f, SendReceiveInfo, MessageFlags)
-receiveMessage = f
-  where
-    f :: forall f t p. (Family f) => Socket f SequentialPacket SCTP -> Int -> MessageFlags -> IO (BS.ByteString, SocketAddress f, SendReceiveInfo, MessageFlags)
-    f sock bufSize flags = do
-      alloca $ \addrPtr-> do
-        alloca $ \addrSizePtr-> do
-          alloca $ \sinfoPtr-> do
-            alloca $ \flagsPtr -> do
-              c_memset sinfoPtr 0 (#size struct sctp_sndrcvinfo)
-              poke addrSizePtr (fromIntegral $ sizeOf (undefined :: SocketAddress f))
-              poke flagsPtr (flags `mappend` msgNoSignal)
-              bracketOnError
-                ( mallocBytes bufSize )
-                (\bufPtr-> free bufPtr )
-                (\bufPtr-> do
-                    bytesReceived <- tryWaitRetryLoop
-                      sock
-                      unsafeSocketWaitRead
-                      (\fd-> c_sctp_recvmsg fd bufPtr (fromIntegral bufSize) addrPtr addrSizePtr sinfoPtr flagsPtr )
-                    addr   <- peek addrPtr
-                    flags' <- peek flagsPtr
-                    sinfo  <- peek sinfoPtr
-                    msg    <- BS.unsafePackMallocCStringLen (bufPtr, fromIntegral bytesReceived)
-                    return (msg, addr, sinfo, flags')
-                )
+receiveMessage sock bufSize flags = do
+  alloca $ \addrPtr-> do
+    alloca $ \addrSizePtr-> do
+      alloca $ \sinfoPtr-> do
+        alloca $ \flagsPtr -> do
+          uaddr <- return undefined
+          c_memset sinfoPtr 0 (#size struct sctp_sndrcvinfo)
+          poke addrSizePtr (fromIntegral $ sizeOf uaddr)
+          poke flagsPtr (flags `mappend` msgNoSignal)
+          bracketOnError
+            ( mallocBytes bufSize )
+            (\bufPtr-> free bufPtr )
+            (\bufPtr-> do
+                bytesReceived <- tryWaitRetryLoop
+                  sock
+                  unsafeSocketWaitRead
+                  (\fd-> c_sctp_recvmsg fd bufPtr (fromIntegral bufSize) addrPtr addrSizePtr sinfoPtr flagsPtr )
+                addr   <- peek addrPtr
+                flags' <- peek flagsPtr
+                sinfo  <- peek sinfoPtr
+                msg    <- BS.unsafePackMallocCStringLen (bufPtr, fromIntegral bytesReceived)
+                return (msg, addr `asTypeOf` uaddr, sinfo, flags')
+            )
 
+-- | Send a message on a SCTP socket.
+--
+-- - Everything that applies to `System.Socket.send` is also true for this operation.
+-- - Sending a message is atomic unless the `ExplicitEndOfRecord` option has been enabled (not yet supported),
 sendMessage :: Family f => Socket f SequentialPacket SCTP
                         -> BS.ByteString
                         -> SocketAddress f
@@ -210,6 +220,33 @@ sendMessage sock msg addr ppid flags sn ttl context = do
                   ttl
                   context
       return (fromIntegral i)
+
+{-- NOT YET SUPPORTED :-(
+
+-- | @SCTP_EXPLICIT_EOR@
+data ExplicitEndOfRecord
+   = ExplicitEndOfRecord Bool
+     deriving (Eq, Ord, Show)
+
+instance Storable ExplicitEndOfRecord where
+  sizeOf _    = sizeOf (undefined :: CInt)
+  alignment _ = alignment (undefined :: CInt)
+  peek ptr    = do
+    i <- peek ptr :: IO CInt
+    return (ExplicitEndOfRecord $ i /= 0)
+  poke ptr (ExplicitEndOfRecord False)  = do
+    poke ptr (0 :: CInt)
+  poke ptr (ExplicitEndOfRecord True) = do
+    poke ptr (1 :: CInt)
+
+instance GetSocketOption ExplicitEndOfRecord where
+  getSocketOption sock =
+    unsafeGetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_EXPLICIT_EOR)
+
+instance SetSocketOption ExplicitEndOfRecord where
+  setSocketOption sock value =
+    unsafeSetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_EXPLICIT_EOR) value
+--}
 
 -- | @SCTP_INITMSG@
 data InitMessage
@@ -255,7 +292,6 @@ data Events
      , partialDeliveryEvent  :: Bool
      , adaptationLayerEvent  :: Bool
      , authenticationEvent   :: Bool
---     , senderDryEvent        :: Bool
      }
    deriving (Eq, Ord, Show)
 
@@ -271,7 +307,6 @@ instance Monoid Events where
     (max (partialDeliveryEvent a) (partialDeliveryEvent b))
     (max (adaptationLayerEvent a) (adaptationLayerEvent b))
     (max (authenticationEvent  a) (authenticationEvent  b))
---    (max (senderDryEvent       a) (senderDryEvent       b))
 
 instance Storable Events where
   sizeOf    _ = (#size struct sctp_event_subscribe)
@@ -286,7 +321,6 @@ instance Storable Events where
     <*> ((/=0) <$> (peek ((#ptr struct sctp_event_subscribe, sctp_partial_delivery_event)   ptr :: Ptr CUChar)))
     <*> ((/=0) <$> (peek ((#ptr struct sctp_event_subscribe, sctp_adaptation_layer_event)   ptr :: Ptr CUChar)))
     <*> ((/=0) <$> (peek ((#ptr struct sctp_event_subscribe, sctp_authentication_event)     ptr :: Ptr CUChar)))
---    <*> ((/=0) <$> (peek ((#ptr struct sctp_event_subscribe, sctp_sender_dry_event)         ptr :: Ptr CUChar)))
   poke ptr a = do
     c_memset ptr 0 $ fromIntegral (sizeOf a)
     poke ((#ptr struct sctp_event_subscribe, sctp_data_io_event)            ptr :: Ptr CUChar) (f $ dataIOEvent          a)
@@ -298,7 +332,6 @@ instance Storable Events where
     poke ((#ptr struct sctp_event_subscribe, sctp_partial_delivery_event)   ptr :: Ptr CUChar) (f $ partialDeliveryEvent a)
     poke ((#ptr struct sctp_event_subscribe, sctp_adaptation_layer_event)   ptr :: Ptr CUChar) (f $ adaptationLayerEvent a)
     poke ((#ptr struct sctp_event_subscribe, sctp_authentication_event)     ptr :: Ptr CUChar) (f $ authenticationEvent  a)
---    poke ((#ptr struct sctp_event_subscribe, sctp_sender_dry_event)         ptr :: Ptr CUChar) (f $ senderDryEvent       a)
     where
       f True  = 1
       f False = 0

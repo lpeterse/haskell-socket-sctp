@@ -60,7 +60,7 @@ import System.Socket.Protocol.SCTP.Internal
 -- >   client <- socket :: IO (Socket Inet SequentialPacket SCTP)
 -- >   print =<< SCTP.sendMessage
 -- >     client
--- >     "hallo"
+-- >     "Hello world!"
 -- >     ( SocketAddressInet Inet.loopback 7777 )
 -- >     ( 2342   :: PayloadProtocolIdentifier )
 -- >     ( mempty :: MessageFlags )
