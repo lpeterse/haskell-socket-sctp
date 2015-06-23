@@ -3,8 +3,8 @@ version:             0.1.0.0
 synopsis:            STCP socket extensions library.
 description:
   This is a binding to the types and operations of `libsctp`.
-  This library is intended to used in conjunction with the `socket`
-  library it depends on.
+  It's intended to be used in conjunction with the `socket`
+  library.
 
 license:             MIT
 license-file:        LICENSE
