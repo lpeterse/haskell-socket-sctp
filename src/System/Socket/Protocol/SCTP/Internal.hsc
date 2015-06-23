@@ -37,6 +37,7 @@ import Control.Applicative
 import Control.Exception
 
 import Data.Bits
+import Data.Monoid
 import Data.Word
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as BS
