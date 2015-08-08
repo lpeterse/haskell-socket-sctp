@@ -160,7 +160,7 @@ instance Storable SendReceiveInfo where
 
 -- | Receive a message on a SCTP socket.
 --
--- - Everything that applies to `System.Socket.recv` is also true for this operation.
+-- - Everything that applies to `System.Socket.receive` is also true for this operation.
 -- - The fields of the `SendReceiveInfo` structure are only filled if `dataIOEvent`
 --   has been enabled trough the `Events` socket option.
 -- - If the supplied buffer size is not sufficient, several consecutive reads are
