@@ -58,6 +58,12 @@ import System.Socket.Protocol
 
 data    SCTP
 
+-- | Class containing all protocol types that can be used with SCTP.
+class SCTPType t where
+
+instance SCTPType SequentialPacket
+instance SCTPType Stream
+
 data SendReceiveInfo
    = SendReceiveInfo
      { sinfoStreamNumber                      :: StreamNumber
@@ -160,10 +166,10 @@ instance Storable SendReceiveInfo where
 -- - If the supplied buffer size is not sufficient, several consecutive reads are
 --   necessary to receive the complete message. The `msgEndOfRecord` flag is set
 --   when the message has been read completely.
-receiveMessage :: Family f => Socket f SequentialPacket SCTP
-                           -> Int -- ^ buffer size in bytes
-                           -> MessageFlags
-                           -> IO (BS.ByteString, SocketAddress f, SendReceiveInfo, MessageFlags)
+receiveMessage :: (Family f, SCTPType t) => Socket f t SCTP
+                                         -> Int -- ^ buffer size in bytes
+                                         -> MessageFlags
+                                         -> IO (BS.ByteString, SocketAddress f, SendReceiveInfo, MessageFlags)
 receiveMessage sock bufSize flags = do
   alloca $ \addrPtr-> do
     alloca $ \addrSizePtr-> do
@@ -192,15 +198,15 @@ receiveMessage sock bufSize flags = do
 --
 -- - Everything that applies to `System.Socket.send` is also true for this operation.
 -- - Sending a message is atomic unless the `ExplicitEndOfRecord` option has been enabled (not yet supported),
-sendMessage :: Family f => Socket f SequentialPacket SCTP
-                        -> BS.ByteString
-                        -> SocketAddress f
-                        -> PayloadProtocolIdentifier -- ^ a user value not interpreted by SCTP
-                        -> MessageFlags
-                        -> StreamNumber
-                        -> TimeToLive
-                        -> Context
-                        -> IO Int
+sendMessage :: (Family f, SCTPType t) => Socket f t SCTP
+                                      -> BS.ByteString
+                                      -> SocketAddress f
+                                      -> PayloadProtocolIdentifier -- ^ a user value not interpreted by SCTP
+                                      -> MessageFlags
+                                      -> StreamNumber
+                                      -> TimeToLive
+                                      -> Context
+                                      -> IO Int
 sendMessage sock msg addr ppid flags sn ttl context = do
   alloca $ \addrPtr-> do
     BS.unsafeUseAsCStringLen msg $ \(msgPtr,msgSize)-> do
