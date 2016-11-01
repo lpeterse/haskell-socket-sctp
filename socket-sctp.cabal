@@ -19,6 +19,8 @@ tested-with:         GHC==7.10.1, GHC==7.8.3
 extra-source-files:  README.md
                      CHANGELOG.md
                      CONTRIBUTORS.txt
+                     src/System/Socket/Protocol/SCTP/hs_sctp.c
+                     src/System/Socket/Protocol/SCTP/hs_sctp.h
 
 library
   ghc-options:         -Wall
@@ -26,8 +28,11 @@ library
   other-modules:       System.Socket.Protocol.SCTP.Internal
   build-depends:       base >= 4.7 && < 5
                      , bytestring < 0.11
-                     , socket >= 0.5.1.0 && < 0.6.0.0
+                     , socket >= 0.7.0.0 && < 0.8
   hs-source-dirs:      src
+  include-dirs:        src/System/Socket/Protocol/SCTP
+  c-sources:           src/System/Socket/Protocol/SCTP/hs_sctp.c
+  install-includes:    src/System/Socket/Protocol/SCTP/hs_sctp.h
   build-tools:         hsc2hs
   default-language:    Haskell2010
   extra-libraries:     sctp

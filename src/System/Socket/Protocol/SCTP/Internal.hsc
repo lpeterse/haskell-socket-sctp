@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, FlexibleContexts #-}
 module System.Socket.Protocol.SCTP.Internal
   ( SCTP
   -- * Operations
@@ -51,10 +51,13 @@ import System.Posix.Types ( Fd(..) )
 
 import System.Socket
 import System.Socket.Unsafe
-import System.Socket.Protocol
+import System.Socket.Type.SequentialPacket
+import System.Socket.Type.Stream
 
 #include "netinet/sctp.h"
+#if __GLASGOW_HASKELL__ < 800
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
+#endif
 
 data    SCTP
 
@@ -166,7 +169,7 @@ instance Storable SendReceiveInfo where
 -- - If the supplied buffer size is not sufficient, several consecutive reads are
 --   necessary to receive the complete message. The `msgEndOfRecord` flag is set
 --   when the message has been read completely.
-receiveMessage :: (Family f, SCTPType t) => Socket f t SCTP
+receiveMessage :: (Family f, Storable (SocketAddress f), SCTPType t) => Socket f t SCTP
                                          -> Int -- ^ buffer size in bytes
                                          -> MessageFlags
                                          -> IO (BS.ByteString, SocketAddress f, SendReceiveInfo, MessageFlags)
@@ -198,7 +201,7 @@ receiveMessage sock bufSize flags = do
 --
 -- - Everything that applies to `System.Socket.send` is also true for this operation.
 -- - Sending a message is atomic unless the `ExplicitEndOfRecord` option has been enabled (not yet supported),
-sendMessage :: (Family f, SCTPType t) => Socket f t SCTP
+sendMessage :: (Storable (SocketAddress f)) => Socket f t SCTP
                                       -> BS.ByteString
                                       -> SocketAddress f
                                       -> PayloadProtocolIdentifier -- ^ a user value not interpreted by SCTP
@@ -278,11 +281,10 @@ instance Storable InitMessage where
     poke ((#ptr struct sctp_initmsg, sinit_max_attempts)   ptr) (maxAttempts        a)
     poke ((#ptr struct sctp_initmsg, sinit_max_init_timeo) ptr) (maxInitTimeout     a)
 
-instance GetSocketOption InitMessage where
+instance SocketOption InitMessage where
   getSocketOption sock =
     unsafeGetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_INITMSG)
 
-instance SetSocketOption InitMessage where
   setSocketOption sock value =
     unsafeSetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_INITMSG) value
 
@@ -342,11 +344,10 @@ instance Storable Events where
       f True  = 1
       f False = 0
 
-instance GetSocketOption Events where
+instance SocketOption Events where
   getSocketOption sock =
     unsafeGetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_EVENTS)
 
-instance SetSocketOption Events where
   setSocketOption sock value =
     unsafeSetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_EVENTS) value
 
@@ -357,8 +358,8 @@ instance SetSocketOption Events where
 foreign import ccall unsafe "memset"
   c_memset   :: Ptr a -> CInt -> CSize -> IO ()
 
-foreign import ccall unsafe "sctp_recvmsg"
-  c_sctp_recvmsg :: Fd -> Ptr a -> CSize -> Ptr b -> Ptr CInt -> Ptr SendReceiveInfo -> Ptr MessageFlags -> IO CInt
+foreign import ccall unsafe "hs_sctp_recvmsg"
+  c_sctp_recvmsg :: Fd -> Ptr a -> CSize -> Ptr b -> Ptr CInt -> Ptr SendReceiveInfo -> Ptr MessageFlags -> Ptr CInt -> IO CInt
 
-foreign import ccall unsafe "sctp_sendmsg"
-  c_sctp_sendmsg :: Fd -> Ptr a -> CSize -> Ptr b -> CInt -> PayloadProtocolIdentifier -> MessageFlags -> StreamNumber -> TimeToLive -> Context -> IO CInt
+foreign import ccall unsafe "hs_sctp_sendmsg"
+  c_sctp_sendmsg :: Fd -> Ptr a -> CSize -> Ptr b -> CInt -> PayloadProtocolIdentifier -> MessageFlags -> StreamNumber -> TimeToLive -> Context -> Ptr CInt -> IO CInt

@@ -7,6 +7,7 @@ import Control.Exception
 import Control.Concurrent
 
 import System.Socket
+import System.Socket.Type.SequentialPacket
 import System.Socket.Family.Inet as Inet
 import System.Socket.Protocol.SCTP as SCTP
 
@@ -37,8 +38,8 @@ main = do
   when (msg /= "hallo") (e 11)
   when (flags /= msgEndOfRecord) (e 12)
 
-addr :: SocketAddressInet
-addr  = SocketAddressInet Inet.loopback 7777
+addr :: SocketAddress Inet
+addr  = SocketAddressInet Inet.inetLoopback 7777
 
 p :: Int -> IO ()
 p i = print i
