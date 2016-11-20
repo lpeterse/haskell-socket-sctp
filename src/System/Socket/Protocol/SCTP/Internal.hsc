@@ -38,6 +38,14 @@ module System.Socket.Protocol.SCTP.Internal
   , InitMessage (..)
   -- ** Events
   , Events (..)
+  -- * Notifications
+  , msgNotification
+  , Notification (..)
+  , AssocId
+  , unsafeParseNotification
+  -- ** SCTP_ASSOC_CHANGE
+  , AssocChange (..)
+  , AcState(..)
   ) where
 
 import Control.Applicative
@@ -46,6 +54,8 @@ import Control.Exception
 import Data.Bits
 import Data.Monoid
 import Data.Word
+import Data.Int
+import Data.Ix
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as BS
 
@@ -53,6 +63,7 @@ import Foreign.Storable
 import Foreign.Ptr
 import Foreign.Marshal
 import Foreign.C.Types
+import Foreign.C.String
 
 import System.Posix.Types ( Fd(..) )
 
@@ -377,6 +388,83 @@ instance SocketOption Events where
 
   setSocketOption sock value =
     unsafeSetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_EVENTS) value
+
+--------------------------------------
+-- Notifications
+--------------------------------------
+
+msgNotification :: MessageFlags
+msgNotification = MessageFlags (#const MSG_NOTIFICATION)
+
+data Notification = AssocChangeNotification !AssocChange
+                  | UnsupportedNotification !BS.ByteString deriving (Show)
+                  {- Other notifications we may want to support in the future
+                  | PaddrChangeNotification !PaddrChange
+                  | RemoteErrorNotification !RemoteError
+                  | SendFailedNotification !SendFailed
+                  | ShutdownEventNotification !ShutdownEvent
+                  | AdaptationEventNotification !AdaptationEvent
+                  | PdapiEventNotification !PdapiEvent
+                  | AuthkeyEventNotification !AuthEvent
+                  | SenderDryEventNotification !SenderDryEvent
+                  | SendFailedEventNotification !SendFailedEvent
+                  -}
+
+data AssocChange
+  = AssocChange
+    { acState :: !AcState
+    -- Error codes don't seem to be standardized...
+    --, acError :: !ErrorCode
+    , acError :: !Word16
+    , acOutboundStreams :: !Word16
+    , acInboundStreams :: !Word16
+    , acAssocId :: !AssocId
+    , acInfo :: !BS.ByteString
+    } deriving (Show)
+
+newtype AssocId =
+  AssocId #{type sctp_assoc_t} deriving (Bounded, Enum, Eq, Integral, Num, Ord, Read, Real, Show, Ix, Storable, Bits)
+
+data AcState = COMM_UP
+             | COMM_LOST
+             | RESTART
+             | SHUTDOWN_COMP
+             | CANT_STR_ASSOC
+             | UNKNOWN_AC_STATE deriving (Show)
+
+-- | Parse an SCTP notification.
+--
+-- This assumes that the buffer contains a complete notification (i.e.
+-- MSG_EOR was set on the last chunk it contains), and is thus unsafe.
+-- Unfortunately, because of the possibility of partial notifications
+-- from a too-small buffer for recvmsg, this must be exposed to users.
+unsafeParseNotification :: BS.ByteString -> IO Notification
+unsafeParseNotification bs =
+  BS.unsafeUseAsCStringLen bs $ \(ptr, sz) -> do
+    ty <- #{peek union sctp_notification, sn_header.sn_type} ptr :: IO Word16
+    case ty of
+      #{const SCTP_ASSOC_CHANGE} -> AssocChangeNotification <$> unsafeParseAssocChange (ptr, sz)
+      _ -> return $ UnsupportedNotification bs
+
+unsafeParseAssocChange :: CStringLen -> IO AssocChange
+unsafeParseAssocChange (ptr, sz) = do
+    st <- parseState <$> #{peek struct sctp_assoc_change, sac_state} ptr
+    err <- #{peek struct sctp_assoc_change, sac_error} ptr
+    outb <- #{peek struct sctp_assoc_change, sac_outbound_streams} ptr
+    inb <- #{peek struct sctp_assoc_change, sac_inbound_streams} ptr
+    aid <- AssocId <$> #{peek struct sctp_assoc_change, sac_assoc_id} ptr
+    info <- BS.packCStringLen (#{ptr struct sctp_assoc_change, sac_info} ptr, infoSize)
+    return $ AssocChange st err outb inb aid info
+  where
+    parseState :: Word16 -> AcState
+    parseState #{const SCTP_COMM_UP} = COMM_UP
+    parseState #{const SCTP_COMM_LOST} = COMM_LOST
+    parseState #{const SCTP_RESTART} = RESTART
+    parseState #{const SCTP_SHUTDOWN_COMP} = SHUTDOWN_COMP
+    parseState #{const SCTP_CANT_STR_ASSOC} = CANT_STR_ASSOC
+    parseState _ = UNKNOWN_AC_STATE
+
+    infoSize = sz - #{offset struct sctp_assoc_change, sac_info}
 
 ------------------------------------------------------------------------
 -- FFI
