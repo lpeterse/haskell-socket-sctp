@@ -17,10 +17,12 @@ module System.Socket.Protocol.SCTP.Internal
   , TransportSequenceNumber (..)
   , CumulativeTransportSequenceNumber (..)
   , AssociationIdentifier (..)
+  -- * SendmsgFlags
   , SendmsgFlags (..)
 #ifdef SCTP_SENDALL
   , sendall
 #endif
+  , unorderedSendmsg
   -- * SendReceiveInfoFlags
   , SendReceiveInfoFlags (..)
   -- ** unordered
@@ -148,6 +150,9 @@ shutdown         = SendReceiveInfoFlags (#const SCTP_EOF)
 sendall         :: SendmsgFlags
 sendall          = SendmsgFlags (#const SCTP_SENDALL)
 #endif
+
+unorderedSendmsg :: SendmsgFlags
+unorderedSendmsg = SendmsgFlags (#const SCTP_UNORDERED)
 
 instance Storable SendReceiveInfo where
   sizeOf    _ = (#size struct sctp_sndrcvinfo)
