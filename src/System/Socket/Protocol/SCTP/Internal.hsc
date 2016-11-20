@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, FlexibleContexts #-}
+#include "netinet/sctp.h"
 module System.Socket.Protocol.SCTP.Internal
   ( SCTP
   -- * Operations
@@ -16,6 +17,10 @@ module System.Socket.Protocol.SCTP.Internal
   , TransportSequenceNumber (..)
   , CumulativeTransportSequenceNumber (..)
   , AssociationIdentifier (..)
+  , SendmsgFlags (..)
+#ifdef SCTP_SENDALL
+  , sendall
+#endif
   -- * SendReceiveInfoFlags
   , SendReceiveInfoFlags (..)
   -- ** unordered
@@ -54,7 +59,6 @@ import System.Socket.Unsafe
 import System.Socket.Type.SequentialPacket
 import System.Socket.Type.Stream
 
-#include "netinet/sctp.h"
 #if __GLASGOW_HASKELL__ < 800
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
 #endif
@@ -92,6 +96,14 @@ newtype StreamSequenceNumber
 newtype SendReceiveInfoFlags
       = SendReceiveInfoFlags Word16
       deriving (Eq, Ord, Show, Num, Storable, Bits)
+
+newtype SendmsgFlags
+      = SendmsgFlags Word32
+      deriving (Eq, Ord, Show, Num, Storable, Bits)
+
+instance Monoid SendmsgFlags where
+  mempty  = SendmsgFlags 0
+  mappend = (.|.)
 
 newtype PayloadProtocolIdentifier
       = PayloadProtocolIdentifier Word32
@@ -131,6 +143,11 @@ abort            = SendReceiveInfoFlags (#const SCTP_ABORT)
 
 shutdown        :: SendReceiveInfoFlags
 shutdown         = SendReceiveInfoFlags (#const SCTP_EOF)
+
+#ifdef SCTP_SENDALL
+sendall         :: SendmsgFlags
+sendall          = SendmsgFlags (#const SCTP_SENDALL)
+#endif
 
 instance Storable SendReceiveInfo where
   sizeOf    _ = (#size struct sctp_sndrcvinfo)
@@ -203,32 +220,37 @@ receiveMessage sock bufSize flags = do
 -- - Sending a message is atomic unless the `ExplicitEndOfRecord` option has been enabled (not yet supported),
 sendMessage :: (Storable (SocketAddress f)) => Socket f t SCTP
                                       -> BS.ByteString
-                                      -> SocketAddress f
+                                      -> Maybe (SocketAddress f)
                                       -> PayloadProtocolIdentifier -- ^ a user value not interpreted by SCTP
-                                      -> MessageFlags
+                                      -> SendmsgFlags
                                       -> StreamNumber
                                       -> TimeToLive
                                       -> Context
                                       -> IO Int
 sendMessage sock msg addr ppid flags sn ttl context = do
-  alloca $ \addrPtr-> do
-    BS.unsafeUseAsCStringLen msg $ \(msgPtr,msgSize)-> do
-      poke addrPtr addr
-      i <- tryWaitRetryLoop
-        sock
-        unsafeSocketWaitWrite
-        $ \fd-> c_sctp_sendmsg
-                  fd
-                  msgPtr
-                  (fromIntegral msgSize)
-                  addrPtr
-                  (fromIntegral $ sizeOf addr)
-                  ppid
-                  flags
-                  sn
-                  ttl
-                  context
-      return (fromIntegral i)
+  BS.unsafeUseAsCStringLen msg $ \(msgPtr,msgSize)-> do
+    let finish addrPtr sz = do
+          i <- tryWaitRetryLoop
+            sock
+            unsafeSocketWaitWrite
+              $ \fd-> c_sctp_sendmsg
+                      fd
+                      msgPtr
+                      (fromIntegral msgSize)
+                      addrPtr
+                      sz
+                      ppid
+                      flags
+                      sn
+                      ttl
+                      context
+          return (fromIntegral i)
+    case addr of
+      Just addr' -> do
+        alloca $ \addrPtr-> do
+          poke addrPtr addr'
+          finish addrPtr (fromIntegral $ sizeOf addr')
+      Nothing -> finish nullPtr 0
 
 {-- NOT YET SUPPORTED :-(
 
@@ -362,4 +384,4 @@ foreign import ccall unsafe "hs_sctp_recvmsg"
   c_sctp_recvmsg :: Fd -> Ptr a -> CSize -> Ptr b -> Ptr CInt -> Ptr SendReceiveInfo -> Ptr MessageFlags -> Ptr CInt -> IO CInt
 
 foreign import ccall unsafe "hs_sctp_sendmsg"
-  c_sctp_sendmsg :: Fd -> Ptr a -> CSize -> Ptr b -> CInt -> PayloadProtocolIdentifier -> MessageFlags -> StreamNumber -> TimeToLive -> Context -> Ptr CInt -> IO CInt
+  c_sctp_sendmsg :: Fd -> Ptr a -> CSize -> Ptr b -> CInt -> PayloadProtocolIdentifier -> SendmsgFlags -> StreamNumber -> TimeToLive -> Context -> Ptr CInt -> IO CInt

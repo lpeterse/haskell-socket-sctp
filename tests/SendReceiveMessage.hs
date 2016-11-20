@@ -24,9 +24,9 @@ main = do
   SCTP.sendMessage
     client
     "hallo"
-    addr
+    (Just addr)
     ( 2342   :: PayloadProtocolIdentifier )
-    ( mempty :: MessageFlags )
+    ( mempty :: SendmsgFlags )
     ( 2      :: StreamNumber )
     ( 3      :: TimeToLive )
     ( 4      :: Context )           `onException` p 7

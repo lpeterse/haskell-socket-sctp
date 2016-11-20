@@ -63,7 +63,7 @@ import System.Socket.Protocol.SCTP.Internal
 -- >     "Hello world!"
 -- >     ( SocketAddressInet Inet.loopback 7777 )
 -- >     ( 2342   :: PayloadProtocolIdentifier )
--- >     ( mempty :: MessageFlags )
+-- >     ( mempty :: SendmsgFlags )
 -- >     ( 2      :: StreamNumber )
 -- >     ( 0      :: TimeToLive )
 -- >     ( 0      :: Context )
