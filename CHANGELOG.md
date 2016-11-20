@@ -1,3 +1,7 @@
+0.2.0.1 Shea Levy <shea@shealevy.com> 2016-11-20
+
+  * Include bumped changelog
+
 0.2.0.0 Shea Levy <shea@shealevy.com> 2016-11-20
 
   * Support for recent changes to `socket`
