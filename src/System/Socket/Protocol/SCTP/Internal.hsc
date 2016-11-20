@@ -1,4 +1,5 @@
-{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, FlexibleContexts #-}
+#include "netinet/sctp.h"
 module System.Socket.Protocol.SCTP.Internal
   ( SCTP
   -- * Operations
@@ -16,6 +17,12 @@ module System.Socket.Protocol.SCTP.Internal
   , TransportSequenceNumber (..)
   , CumulativeTransportSequenceNumber (..)
   , AssociationIdentifier (..)
+  -- * SendmsgFlags
+  , SendmsgFlags (..)
+#ifdef SCTP_SENDALL
+  , sendall
+#endif
+  , unorderedSendmsg
   -- * SendReceiveInfoFlags
   , SendReceiveInfoFlags (..)
   -- ** unordered
@@ -51,10 +58,12 @@ import System.Posix.Types ( Fd(..) )
 
 import System.Socket
 import System.Socket.Unsafe
-import System.Socket.Protocol
+import System.Socket.Type.SequentialPacket
+import System.Socket.Type.Stream
 
-#include "netinet/sctp.h"
+#if __GLASGOW_HASKELL__ < 800
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
+#endif
 
 data    SCTP
 
@@ -89,6 +98,14 @@ newtype StreamSequenceNumber
 newtype SendReceiveInfoFlags
       = SendReceiveInfoFlags Word16
       deriving (Eq, Ord, Show, Num, Storable, Bits)
+
+newtype SendmsgFlags
+      = SendmsgFlags Word32
+      deriving (Eq, Ord, Show, Num, Storable, Bits)
+
+instance Monoid SendmsgFlags where
+  mempty  = SendmsgFlags 0
+  mappend = (.|.)
 
 newtype PayloadProtocolIdentifier
       = PayloadProtocolIdentifier Word32
@@ -129,6 +146,14 @@ abort            = SendReceiveInfoFlags (#const SCTP_ABORT)
 shutdown        :: SendReceiveInfoFlags
 shutdown         = SendReceiveInfoFlags (#const SCTP_EOF)
 
+#ifdef SCTP_SENDALL
+sendall         :: SendmsgFlags
+sendall          = SendmsgFlags (#const SCTP_SENDALL)
+#endif
+
+unorderedSendmsg :: SendmsgFlags
+unorderedSendmsg = SendmsgFlags (#const SCTP_UNORDERED)
+
 instance Storable SendReceiveInfo where
   sizeOf    _ = (#size struct sctp_sndrcvinfo)
   alignment _ = (#alignment struct sctp_sndrcvinfo)
@@ -166,7 +191,7 @@ instance Storable SendReceiveInfo where
 -- - If the supplied buffer size is not sufficient, several consecutive reads are
 --   necessary to receive the complete message. The `msgEndOfRecord` flag is set
 --   when the message has been read completely.
-receiveMessage :: (Family f, SCTPType t) => Socket f t SCTP
+receiveMessage :: (Family f, Storable (SocketAddress f), SCTPType t) => Socket f t SCTP
                                          -> Int -- ^ buffer size in bytes
                                          -> MessageFlags
                                          -> IO (BS.ByteString, SocketAddress f, SendReceiveInfo, MessageFlags)
@@ -198,34 +223,39 @@ receiveMessage sock bufSize flags = do
 --
 -- - Everything that applies to `System.Socket.send` is also true for this operation.
 -- - Sending a message is atomic unless the `ExplicitEndOfRecord` option has been enabled (not yet supported),
-sendMessage :: (Family f, SCTPType t) => Socket f t SCTP
+sendMessage :: (Storable (SocketAddress f)) => Socket f t SCTP
                                       -> BS.ByteString
-                                      -> SocketAddress f
+                                      -> Maybe (SocketAddress f)
                                       -> PayloadProtocolIdentifier -- ^ a user value not interpreted by SCTP
-                                      -> MessageFlags
+                                      -> SendmsgFlags
                                       -> StreamNumber
                                       -> TimeToLive
                                       -> Context
                                       -> IO Int
 sendMessage sock msg addr ppid flags sn ttl context = do
-  alloca $ \addrPtr-> do
-    BS.unsafeUseAsCStringLen msg $ \(msgPtr,msgSize)-> do
-      poke addrPtr addr
-      i <- tryWaitRetryLoop
-        sock
-        unsafeSocketWaitWrite
-        $ \fd-> c_sctp_sendmsg
-                  fd
-                  msgPtr
-                  (fromIntegral msgSize)
-                  addrPtr
-                  (fromIntegral $ sizeOf addr)
-                  ppid
-                  flags
-                  sn
-                  ttl
-                  context
-      return (fromIntegral i)
+  BS.unsafeUseAsCStringLen msg $ \(msgPtr,msgSize)-> do
+    let finish addrPtr sz = do
+          i <- tryWaitRetryLoop
+            sock
+            unsafeSocketWaitWrite
+              $ \fd-> c_sctp_sendmsg
+                      fd
+                      msgPtr
+                      (fromIntegral msgSize)
+                      addrPtr
+                      sz
+                      ppid
+                      flags
+                      sn
+                      ttl
+                      context
+          return (fromIntegral i)
+    case addr of
+      Just addr' -> do
+        alloca $ \addrPtr-> do
+          poke addrPtr addr'
+          finish addrPtr (fromIntegral $ sizeOf addr')
+      Nothing -> finish nullPtr 0
 
 {-- NOT YET SUPPORTED :-(
 
@@ -278,11 +308,10 @@ instance Storable InitMessage where
     poke ((#ptr struct sctp_initmsg, sinit_max_attempts)   ptr) (maxAttempts        a)
     poke ((#ptr struct sctp_initmsg, sinit_max_init_timeo) ptr) (maxInitTimeout     a)
 
-instance GetSocketOption InitMessage where
+instance SocketOption InitMessage where
   getSocketOption sock =
     unsafeGetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_INITMSG)
 
-instance SetSocketOption InitMessage where
   setSocketOption sock value =
     unsafeSetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_INITMSG) value
 
@@ -342,11 +371,10 @@ instance Storable Events where
       f True  = 1
       f False = 0
 
-instance GetSocketOption Events where
+instance SocketOption Events where
   getSocketOption sock =
     unsafeGetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_EVENTS)
 
-instance SetSocketOption Events where
   setSocketOption sock value =
     unsafeSetSocketOption sock (#const IPPROTO_SCTP) (#const SCTP_EVENTS) value
 
@@ -357,8 +385,8 @@ instance SetSocketOption Events where
 foreign import ccall unsafe "memset"
   c_memset   :: Ptr a -> CInt -> CSize -> IO ()
 
-foreign import ccall unsafe "sctp_recvmsg"
-  c_sctp_recvmsg :: Fd -> Ptr a -> CSize -> Ptr b -> Ptr CInt -> Ptr SendReceiveInfo -> Ptr MessageFlags -> IO CInt
+foreign import ccall unsafe "hs_sctp_recvmsg"
+  c_sctp_recvmsg :: Fd -> Ptr a -> CSize -> Ptr b -> Ptr CInt -> Ptr SendReceiveInfo -> Ptr MessageFlags -> Ptr CInt -> IO CInt
 
-foreign import ccall unsafe "sctp_sendmsg"
-  c_sctp_sendmsg :: Fd -> Ptr a -> CSize -> Ptr b -> CInt -> PayloadProtocolIdentifier -> MessageFlags -> StreamNumber -> TimeToLive -> Context -> IO CInt
+foreign import ccall unsafe "hs_sctp_sendmsg"
+  c_sctp_sendmsg :: Fd -> Ptr a -> CSize -> Ptr b -> CInt -> PayloadProtocolIdentifier -> SendmsgFlags -> StreamNumber -> TimeToLive -> Context -> Ptr CInt -> IO CInt
