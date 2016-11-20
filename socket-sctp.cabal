@@ -35,7 +35,8 @@ library
   install-includes:    src/System/Socket/Protocol/SCTP/hs_sctp.h
   build-tools:         hsc2hs
   default-language:    Haskell2010
-  extra-libraries:     sctp
+  if !os(freebsd)
+    extra-libraries:   sctp
 
 source-repository head
   type:                git
