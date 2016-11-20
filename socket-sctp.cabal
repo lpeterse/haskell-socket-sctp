@@ -8,14 +8,14 @@ description:
 
 license:             MIT
 license-file:        LICENSE
-author:              Lars Petersen
-maintainer:          info@lars-petersen.net
+author:              Lars Petersen, Shea Levy <shea@shealevy.com>
+maintainer:          shea@shealevy.com
 category:            System, Socket, Network
 build-type:          Simple
 cabal-version:       >=1.10
-homepage:            https://github.com/lpeterse/haskell-socket-sctp
-bug-reports:         https://github.com/lpeterse/haskell-socket-sctp/issues
-tested-with:         GHC==7.10.1, GHC==7.8.3
+homepage:            https://github.com/shlevy/haskell-socket-sctp
+bug-reports:         https://github.com/shlevy/haskell-socket-sctp/issues
+tested-with:         GHC==7.10.1, GHC==7.8.3, GHC==8.0.1
 extra-source-files:  README.md
                      CHANGELOG.md
                      CONTRIBUTORS.txt
@@ -40,7 +40,7 @@ library
 
 source-repository head
   type:                git
-  location:            git://github.com/lpeterse/haskell-socket-sctp.git
+  location:            git://github.com/shlevy/haskell-socket-sctp.git
 
 test-suite SendReceiveMessage
   hs-source-dirs:      tests
