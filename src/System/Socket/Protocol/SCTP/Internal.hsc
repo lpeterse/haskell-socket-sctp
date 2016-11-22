@@ -221,7 +221,7 @@ receiveMessage sock bufSize flags = do
             (\bufPtr-> do
                 bytesReceived <- tryWaitRetryLoop
                   sock
-                  unsafeSocketWaitRead
+                  waitRead
                   (\fd-> c_sctp_recvmsg fd bufPtr (fromIntegral bufSize) addrPtr addrSizePtr sinfoPtr flagsPtr )
                 addr   <- peek addrPtr
                 flags' <- peek flagsPtr
@@ -248,7 +248,7 @@ sendMessage sock msg addr ppid flags sn ttl context = do
     let finish addrPtr sz = do
           i <- tryWaitRetryLoop
             sock
-            unsafeSocketWaitWrite
+            waitWrite
               $ \fd-> c_sctp_sendmsg
                       fd
                       msgPtr
